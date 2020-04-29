@@ -1,5 +1,5 @@
 # web2py_ansible_playbook
-An Ansible playbook to install web2py on Ubuntu 20.04
+An Ansible playbook to install web2py on Ubuntu 20.04 with python 2
 
 ## How to install
  1. Install Ubuntu 20.04
