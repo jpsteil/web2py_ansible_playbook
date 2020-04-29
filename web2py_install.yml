@@ -1,0 +1,138 @@
+- name: web2py install
+  hosts: webservers
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_user: administrator
+    key_file: /etc/nginx/ssl/nginx.key
+    cert_file: /etc/nginx/ssl/nginx.crt
+    conf_file: /etc/nginx/sites-available/web2py
+    web2py_password: coco-beach
+    server_name: localhost
+  tasks:
+    - name: apt upgrade
+      become: True
+      apt: 
+        upgrade: yes
+        update_cache: true
+        
+    - name: Install Ubuntu Packages
+      become: True
+      apt: 
+        name: [python2, python-setuptools, python-dev, build-essential, libssl-dev]
+        update_cache: true
+        state: present
+
+    - name: Get python2 pip
+      get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /home/{{ ansible_user }}/get-pip.py
+
+    - name: Install python2 pip
+      become: True
+      command: 
+        chdir: /home/{{ ansible_user }}
+        cmd: python get-pip.py
+
+    - name: Install uwsgi via pip
+      pip:
+        name: uwsgi
+        executable: pip
+      
+    - name: Pull web2py Repo
+      become: True
+      git:
+        repo: https://github.com/web2py/web2py.git
+        force: yes
+        dest: /home/www-data/web2py
+
+    - name: Add www-data user
+      user:
+        name: www-data
+        group: www-data
+
+    - name: Set ownership of web2py
+      file:
+        path: /home/www-data/web2py
+        owner: www-data
+        group: www-data
+        recurse: yes
+        mode: u+rwx
+
+    - name: copy wsgihandler to web2py root
+      become: True
+      copy: 
+        src: /home/www-data/web2py/handlers/wsgihandler.py
+        dest: /home/www-data/web2py/
+        remote_src: yes
+        owner: www-data
+        group: www-data
+        mode: u+rwx
+
+    - name: copy routes.py
+      template: src=templates/routes.py.j2 dest=/home/www-data/web2py
+
+    - name: set web2py password
+      become: True
+      command: 
+        chdir: /home/www-data/web2py
+        cmd: python -c "from gluon.main import save_password; save_password('{{ web2py_password }}', 443)"; logout
+
+    - name: install nginx
+      apt: name=nginx update_cache=yes cache_valid_time=3600
+
+    - name: create directories for ssl certificates
+      file: path=/etc/nginx/ssl state=directory
+
+    - name: copy TLS key
+      copy: src=files/nginx.key dest={{ key_file }} owner=root mode=0600
+      notify: restart nginx
+
+    - name: copy TLS certificate
+      copy: src=files/nginx.crt dest={{ cert_file }}
+      notify: restart nginx
+
+    - name: copy nginx config file
+      template: src=templates/nginx-web2py.conf.j2 dest={{ conf_file }}
+      notify: restart nginx
+
+    - name: copy nginx web2py configuration
+      file: dest=/etc/nginx/sites-enabled/web2py src={{ conf_file }} state=link
+      notify: restart nginx
+
+    - name: create uwsgi directory
+      file: 
+          path: /etc/uwsgi
+          state: directory
+
+    - name: Copy uwsgi web2py ini
+      template: src=templates/uwsgi-web2py.ini.j2 dest=/etc/uwsgi/web2py.ini mode=0644
+
+    - name: create uwsgi configuration destination directory
+      file: 
+          path: /etc/init
+          state: directory
+
+    - name: Copy uwsgi emperor configuration
+      template: src=templates/uwsgi-emperor.conf.j2 dest=/etc/init/emperor-uwsgi.conf
+      notify: restart uwsgi
+
+    - name: Copy uwsgi emperor service
+      template: src=templates/uwsgi-emperor.service.j2 dest=/etc/systemd/system/emperor.uwsgi.service
+      notify: restart uwsgi
+
+    - name: Enable emperor service
+      service:
+        name: emperor.uwsgi.service
+        enabled: true
+      notify: restart uwsgi
+
+  handlers:
+    - name: restart nginx
+      become: yes
+      service: name=nginx state=restarted
+    - name: restart uwsgi
+      become: yes
+      service: 
+        name: emperor.uwsgi
+        state: restarted
+
