@@ -18,14 +18,25 @@
     - name: Install Ubuntu Packages
       become: True
       apt: 
-        name: [python3-setuptools, python3-pip]
+        name: [python2, python-setuptools, python-dev, build-essential]
         update_cache: true
         state: present
+
+    - name: Get python2 pip
+      get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /home/{{ ansible_user }}/get-pip.py
+
+    - name: Install python2 pip
+      become: True
+      command: 
+        chdir: /home/{{ ansible_user }}
+        cmd: python2 get-pip.py
 
     - name: Install uwsgi via pip
       pip:
         name: uwsgi
-        executable: pip3
+        executable: pip
       
     - name: Pull web2py Repo
       become: True
@@ -64,7 +75,7 @@
       become: True
       command: 
         chdir: /home/www-data/web2py
-        cmd: python3 -c "from gluon.main import save_password; save_password('{{ web2py_password }}', 443)"; logout
+        cmd: python -c "from gluon.main import save_password; save_password('{{ web2py_password }}', 443)"; logout
 
     - name: install nginx
       apt: name=nginx update_cache=yes cache_valid_time=3600
